@@ -1,0 +1,65 @@
+# Render blueprint: API + extraction worker + Postgres.
+# Create it from the Render dashboard with "New > Blueprint" after pushing this repo to GitHub.
+#
+# The frontend is NOT here: it goes to Vercel (see docs/DEPLOYMENT.md).
+#
+# Why one service instead of the separate `worker` in docker-compose.yml: a Render disk attaches to a
+# single service, and both the API and the worker read and write the same storage (uploaded PDFs,
+# cropped figures served at /files). So extraction runs in-process via EMBEDDED_WORKER. To scale
+# extraction onto its own service later, move app/storage.py to S3/GCS first, then drop the disk.
+
+databases:
+  - name: examforge-db
+    databaseName: exam
+    user: exam
+    plan: free # free Postgres instances expire; move to `basic-256mb` or higher to keep data
+
+services:
+  - type: web
+    name: examforge-api
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    plan: starter # a disk requires a paid instance type; `free` has no persistent storage
+    healthCheckPath: /api/health
+    disk:
+      name: examforge-storage
+      mountPath: /data
+      sizeGB: 5
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: examforge-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true # Render generates a strong secret on first deploy
+      - key: STORAGE_DIR
+        value: /data
+      - key: EMBEDDED_WORKER
+        value: "true"
+      # Your Vercel URL. Comma-separated for several origins. Set after the frontend is deployed.
+      - key: CORS_ORIGINS
+        sync: false
+      - key: EXTRACTION_PROVIDER
+        value: gemini
+      - key: GEMINI_API_KEY
+        sync: false # set in the Render dashboard; never commit this
+      # gemini-2.5-* is retired for new API keys (404). Free-tier keys also have no Pro quota (429),
+      # so verification uses Flash too. Raise GEMINI_VERIFY_MODEL to a Pro model on a paid key.
+      - key: GEMINI_MODEL
+        value: gemini-3.5-flash
+      - key: GEMINI_VERIFY_MODEL
+        value: gemini-3.5-flash
+      # Tried in order on 429/503. Gemini returns 503 under load, so a chain matters.
+      - key: GEMINI_FALLBACK_MODELS
+        value: '["gemini-flash-latest","gemini-3.1-flash-lite"]'
+      - key: PAGES_PER_CHUNK
+        value: "2"
+      - key: EXTRACTION_CONCURRENCY
+        value: "4"
+      - key: EXTRACTION_LANGUAGE
+        value: English
+      - key: ADMIN_EMAIL
+        sync: false # your real admin email
+      - key: ADMIN_PASSWORD
+        sync: false # your real admin password

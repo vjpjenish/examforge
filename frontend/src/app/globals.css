@@ -1,0 +1,201 @@
+@import "tailwindcss";
+@import "katex/dist/katex.min.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --bg: #f7f7fb;
+  --bg-elev: #ffffff;
+  --bg-sunken: #eef0f6;
+  --fg: #0f1222;
+  --fg-muted: #5b6178;
+  --fg-subtle: #8a90a6;
+  --border: #e3e5ef;
+  --brand: #5b4cf0;
+  --brand-2: #8b5cf6;
+  --brand-soft: #ecebff;
+  --success: #10a37f;
+  --success-soft: #e3f6ef;
+  --danger: #e5484d;
+  --danger-soft: #fdecec;
+  --warning: #e09b13;
+  --warning-soft: #fdf3e0;
+  --info: #0e8fd6;
+  --shadow: 0 1px 2px rgb(16 18 34 / 0.04), 0 8px 24px -12px rgb(16 18 34 / 0.12);
+}
+
+.dark {
+  --bg: #0b0c14;
+  --bg-elev: #12141f;
+  --bg-sunken: #0f111a;
+  --fg: #eceef7;
+  --fg-muted: #a0a6bd;
+  --fg-subtle: #6d7390;
+  --border: #23263a;
+  --brand: #7c6ff7;
+  --brand-2: #a78bfa;
+  --brand-soft: #1e1b3d;
+  --success: #2fbf8f;
+  --success-soft: #0f2a22;
+  --danger: #f26b6f;
+  --danger-soft: #2e1517;
+  --warning: #f0b232;
+  --warning-soft: #2c2210;
+  --info: #3aaef0;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 12px 32px -16px rgb(0 0 0 / 0.6);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-elev: var(--bg-elev);
+  --color-sunken: var(--bg-sunken);
+  --color-fg: var(--fg);
+  --color-muted: var(--fg-muted);
+  --color-subtle: var(--fg-subtle);
+  --color-line: var(--border);
+  --color-brand: var(--brand);
+  --color-brand-2: var(--brand-2);
+  --color-brand-soft: var(--brand-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-info: var(--info);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --shadow-card: var(--shadow);
+}
+
+html {
+  color-scheme: light;
+}
+html.dark {
+  color-scheme: dark;
+}
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--brand) 25%, transparent);
+}
+
+.text-gradient {
+  background: linear-gradient(110deg, var(--brand), var(--brand-2) 55%, #ec4899);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.bg-grid {
+  background-image:
+    linear-gradient(to right, color-mix(in oklab, var(--border) 70%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklab, var(--border) 70%, transparent) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse at top, black 30%, transparent 75%);
+}
+
+.prose-q p + p {
+  margin-top: 0.6rem;
+}
+.prose-q table {
+  border-collapse: collapse;
+  margin: 0.6rem 0;
+  font-size: 0.92em;
+}
+.prose-q th,
+.prose-q td {
+  border: 1px solid var(--border);
+  padding: 0.35rem 0.6rem;
+  text-align: left;
+}
+.prose-q .katex-display {
+  margin: 0.5rem 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* ---------------------------------------------------------------------------
+   Motion model copied from the reference dashboard.
+
+   Entrance: the content area rises once per route (0.55s), rather than each
+   card fading in as it scrolls into view. Interaction: a flat 200ms ease on a
+   small set of affordances — nav rows slide, buttons and the dropzone lift,
+   table rows tint. Everything here is disabled by the reduced-motion block
+   further down.
+   --------------------------------------------------------------------------- */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.animate-rise {
+  animation: 0.55s cubic-bezier(0.22, 1, 0.36, 1) both rise;
+}
+
+.i-nav,
+.i-lift,
+.i-row,
+.i-drop {
+  transition: all 0.2s;
+}
+.i-nav:hover {
+  transform: translateX(2px);
+}
+.i-lift:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 7px 16px color-mix(in oklab, var(--brand) 25%, transparent);
+}
+.i-row:hover {
+  background: color-mix(in oklab, var(--brand) 4%, transparent);
+}
+.i-drop:hover {
+  transform: translateY(-1px);
+  border-color: var(--brand);
+  background: color-mix(in oklab, var(--brand-soft) 60%, transparent);
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-sunken);
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--bg-elev) 60%, transparent), transparent);
+  animation: shimmer 1.4s infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

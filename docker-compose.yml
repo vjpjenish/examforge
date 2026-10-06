@@ -1,0 +1,46 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: exam
+      POSTGRES_PASSWORD: exam
+      POSTGRES_DB: exam
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U exam"]
+      interval: 3s
+      retries: 20
+
+  api:
+    build: ./backend
+    env_file: [./backend/.env]
+    environment: &backend-env
+      DATABASE_URL: postgresql+psycopg://exam:exam@db:5432/exam
+      STORAGE_DIR: /data
+      EMBEDDED_WORKER: "false"
+    volumes: [storage:/data]
+    ports: ["8000:8000"]
+    depends_on:
+      db: { condition: service_healthy }
+
+  worker:
+    build: ./backend
+    command: python -m app.worker
+    env_file: [./backend/.env]
+    environment: *backend-env
+    volumes: [storage:/data]
+    depends_on: [api]
+    deploy:
+      replicas: 2   # scale extraction throughput: docker compose up --scale worker=N
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports: ["3000:3000"]
+    depends_on: [api]
+
+volumes:
+  pgdata:
+  storage:

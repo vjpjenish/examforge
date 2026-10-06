@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+backend/storage/
+node_modules/
+frontend/.next/
+frontend/out/
+*.log
+.DS_Store
+.env*.local
+
+# local SQLite database (dev only; Postgres is used in production)
+backend/exam.db
+backend/exam.db.bak
