@@ -17,6 +17,9 @@ services:
     runtime: docker
     rootDir: backend
     dockerfilePath: ./Dockerfile
+    # Match the Neon project's region (AWS US East 2, Ohio). A cross-region database adds
+    # latency to every query, and this app makes many small ones per page.
+    region: ohio
     plan: starter # a disk requires a paid instance type; `free` has no persistent storage
     healthCheckPath: /api/health
     disk:
