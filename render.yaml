@@ -8,11 +8,8 @@
 # cropped figures served at /files). So extraction runs in-process via EMBEDDED_WORKER. To scale
 # extraction onto its own service later, move app/storage.py to S3/GCS first, then drop the disk.
 
-databases:
-  - name: examforge-db
-    databaseName: exam
-    user: exam
-    plan: free # free Postgres instances expire; move to `basic-256mb` or higher to keep data
+# No `databases:` block: Postgres is hosted on Neon, whose free tier does not expire the way
+# Render's does. Paste the Neon connection string into DATABASE_URL when Render prompts for it.
 
 services:
   - type: web
@@ -27,10 +24,12 @@ services:
       mountPath: /data
       sizeGB: 5
     envVars:
+      # Neon connection string, from the Neon dashboard. Either the `postgresql://` or the
+      # `postgres://` form works: app/config.py rewrites it to the psycopg 3 driver, and the
+      # `?sslmode=require` query is preserved. Prefer Neon's DIRECT (non-pooler) string — this is a
+      # long-lived process with its own SQLAlchemy pool, not a serverless function.
       - key: DATABASE_URL
-        fromDatabase:
-          name: examforge-db
-          property: connectionString
+        sync: false
       - key: JWT_SECRET
         generateValue: true # Render generates a strong secret on first deploy
       - key: STORAGE_DIR
