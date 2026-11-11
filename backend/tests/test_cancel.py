@@ -5,6 +5,8 @@ right one sat in the queue behind the paper that was supposedly cancelled, becau
 "cancel" only hid the row in the browser and never reached the server.
 """
 
+import pytest
+
 from app.models import ExtractionJob, JobStatus
 from app.worker import claim_next, process
 
@@ -92,3 +94,46 @@ def test_deleting_a_document_removes_its_queued_job(client, admin_headers, tmp_p
     doc = _upload(client, admin_headers, make_pdf(tmp_path / "gone.pdf"), "Deleted paper")
     assert client.delete(f"/api/documents/{doc['id']}", headers=admin_headers).status_code == 204
     assert claim_next() is None, "deleting a document must take its queued job with it"
+
+
+def test_a_positive_penalty_never_rewards_wrong_answers(client, admin_headers, tmp_path):
+    """Grading adds `marks_incorrect` to the score, so it must be stored negative.
+
+    Found in production: publishing with `marks_incorrect: 0.66` gave 4 correct and 2 wrong a
+    score of 5.32 instead of 2.68 -- the wrong answers were *adding* 0.66 each. The upload
+    handler and publish.sync_test both normalised the sign; this endpoint did not.
+    """
+    doc = _upload(client, admin_headers, make_pdf(tmp_path / "penalty.pdf"), "Penalty paper")
+    process(claim_next())
+
+    r = client.post(
+        f"/api/documents/{doc['id']}/publish-test",
+        json={"title": "Fractional penalty", "marks_correct": 1, "marks_incorrect": 0.66},
+        headers=admin_headers,
+    )
+    assert r.status_code == 200, r.text
+    test = r.json()
+    assert test["marks_incorrect"] == -0.66, "a penalty given as positive must be stored negative"
+
+    # ...and editing the test later must not undo it.
+    r = client.patch(f"/api/tests/{test['id']}", json={"marks_incorrect": 0.33}, headers=admin_headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["marks_incorrect"] == -0.33
+
+    # A wrong answer must reduce the score.
+    attempt = client.post(f"/api/tests/{test['id']}/start", headers=admin_headers).json()
+    aid = attempt.get("attempt_id") or attempt["id"]
+    detail = client.get(f"/api/attempts/{aid}", headers=attempt and admin_headers).json()
+    key = {q["id"]: q["answer"] for q in client.get(f"/api/documents/{doc['id']}/questions", headers=admin_headers).json()}
+    answered_wrong = 0
+    for q in detail["questions"]:
+        correct = key.get(q["question_id"])
+        if q["type"] != "mcq_single" or not correct:
+            continue
+        wrong = [o["label"] for o in q["options"] if o["label"] not in correct][:1]
+        client.put(f"/api/attempts/{aid}/answers/{q['question_id']}",
+                   json={"response": wrong, "visited": True}, headers=admin_headers)
+        answered_wrong += 1
+    score = client.post(f"/api/attempts/{aid}/submit", headers=admin_headers).json()["score"]
+    assert score == pytest.approx(-0.33 * answered_wrong), score
+    assert score < 0, "every answer was wrong, so the score must be negative"

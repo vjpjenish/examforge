@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.models import DocumentKind, JobStatus, QuestionType, ReviewStatus, Role
 
@@ -132,6 +132,16 @@ class QuestionPatch(BaseModel):
     review_status: ReviewStatus | None = None
 
 
+def _penalty_is_negative(value: float | None) -> float | None:
+    """Store the wrong-answer penalty as a negative number.
+
+    Grading just adds `marks_incorrect` to the score, so a positive value would *reward* wrong
+    answers. The upload handler and `publish.sync_test` already normalise this way; doing it in
+    the schema means every entry point agrees, however the caller phrases it ("-0.66" or "0.66
+    deducted")."""
+    return None if value is None else -abs(value)
+
+
 class PublishTestIn(BaseModel):
     title: str = Field(min_length=1, max_length=255)
     description: str = ""
@@ -141,6 +151,8 @@ class PublishTestIn(BaseModel):
     marks_unattempted: float = 0.0
     include_unreviewed: bool = False
     publish: bool = True
+
+    _normalise_penalty = field_validator("marks_incorrect")(_penalty_is_negative)
 
 
 # --- tests & attempts ----------------------------------------------------------------
@@ -169,6 +181,8 @@ class TestPatch(BaseModel):
     marks_incorrect: float | None = None
     marks_unattempted: float | None = None
     is_published: bool | None = None
+
+    _normalise_penalty = field_validator("marks_incorrect")(_penalty_is_negative)
 
 
 class SaveAnswerIn(BaseModel):
