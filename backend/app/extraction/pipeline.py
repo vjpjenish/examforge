@@ -379,6 +379,10 @@ def extract_solutions_document(
     parsed = parse_answer_text([p.text for p in pages], [p.rows for p in pages])
     text_entries = {int(e.number): e for e in parsed.as_entries()}
     conflicts = list(parsed.conflicts)
+    if parsed.overlong:
+        # Surfaced rather than silent: the explanation text for these was a parse failure and dropped.
+        nums = ", ".join(f"Q{n}" for n in parsed.overlong[:10])
+        conflicts.append(f"Solution text ran past the per-question limit and was dropped for {nums}")
 
     # An entry whose text crosses a page the text layer cannot be trusted for may hold another
     # question's explanation (the next question's heading is missing from the text). Re-read those.

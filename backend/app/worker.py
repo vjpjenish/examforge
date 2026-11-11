@@ -96,10 +96,20 @@ def run_forever(stop: threading.Event | None = None, poll_seconds: float = 2.0) 
         process(job_id)
 
 
-def start_embedded() -> threading.Event:
-    """Run a worker thread inside the API process (handy for local development)."""
+def start_embedded(count: int | None = None) -> threading.Event:
+    """Run worker threads inside the API process.
+
+    `count` threads each claim their own job, so a second upload starts straight away instead of
+    queuing behind the first. They share one stop event."""
+    from app.config import get_settings
+
     stop = threading.Event()
-    threading.Thread(target=run_forever, args=(stop,), daemon=True, name="extraction-worker").start()
+    count = count if count is not None else max(1, get_settings().worker_count)
+    for n in range(count):
+        threading.Thread(
+            target=run_forever, args=(stop,), daemon=True, name=f"extraction-worker-{n + 1}"
+        ).start()
+    log.info("Started %d embedded extraction worker(s)", count)
     return stop
 
 
@@ -108,4 +118,16 @@ if __name__ == "__main__":
     from app.db import Base, engine
 
     Base.metadata.create_all(engine)  # in case the worker starts before the API
-    run_forever()
+
+    from app.config import get_settings
+
+    count = max(1, get_settings().worker_count)
+    if count == 1:
+        run_forever()
+    else:
+        stop = start_embedded(count)
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            stop.set()

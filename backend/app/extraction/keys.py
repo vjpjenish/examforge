@@ -13,6 +13,8 @@ back to the model (see pipeline), and the coverage check below decides which pat
 """
 
 import re
+
+from app.config import get_settings
 from dataclasses import dataclass, field
 
 from app.extraction.labels import normalize_answer
@@ -46,6 +48,9 @@ class ParsedKey:
     # First and last page (0-based) each entry's text spans.
     spans: dict[int, tuple[int, int]] = field(default_factory=dict)
     conflicts: list[str] = field(default_factory=list)
+    # Question numbers whose "explanation" ran past `max_explanation_chars` and was dropped as a
+    # parse failure, so the caller can report it rather than silently losing the text.
+    overlong: list[int] = field(default_factory=list)
 
     def as_entries(self) -> list[AnswerKeyEntry]:
         out = []
@@ -125,6 +130,12 @@ def parse_answer_text(pages: list[str], rows: list[str] | None = None, strict: b
             body.pop()
         if current is not None:
             text = "\n".join(body).strip()
+            if len(text) > get_settings().max_explanation_chars:
+                # The parser lost the entry boundaries and swallowed the rest of the document, so
+                # this is not question `current.number`'s explanation. Dropping it beats showing a
+                # student the whole solution booklet under one question.
+                out.overlong.append(int(current.number))
+                text = ""
             if text:
                 current.explanation = text
             n = int(current.number)

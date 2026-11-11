@@ -5,6 +5,7 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.extraction.labels import ordered_options
 from app.models import Document, DocumentKind, Exam, PyqProgress, Question, ReviewStatus, User
 from app.schemas import PyqAnswerIn
 from app.security import current_user, require_admin
@@ -46,7 +47,7 @@ def _public(q: Question, p: PyqProgress | None, reveal: bool) -> dict:
         "difficulty": q.difficulty,
         "type": q.type.value,
         "text": q.text,
-        "options": q.options,
+        "options": ordered_options(q.options),
         "images": q.images,
         "answer": q.answer if reveal else None,
         "explanation": q.explanation if reveal else None,

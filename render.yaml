@@ -39,6 +39,12 @@ services:
         value: /data
       - key: EMBEDDED_WORKER
         value: "true"
+      # Two workers so a second upload starts straight away instead of queuing behind the first.
+      # Each concurrently extracting paper holds its own PyMuPDF pages plus EXTRACTION_CONCURRENCY
+      # model calls, so this needs RAM: on the free 512 MB instance two papers at once can be
+      # OOM-killed. Drop back to "1", or move to a larger instance, if the service restarts.
+      - key: WORKER_COUNT
+        value: "2"
       # Your Vercel URL. Comma-separated for several origins. Set after the frontend is deployed.
       - key: CORS_ORIGINS
         sync: false
