@@ -5,6 +5,7 @@ signed-in user can correct a published question.
 """
 
 import re
+from datetime import datetime, timezone
 from difflib import SequenceMatcher
 
 import pymupdf
@@ -218,6 +219,28 @@ def reextract(doc_id: int, db: Session = Depends(get_db), _: User = Depends(requ
     job = ExtractionJob(document_id=doc.id)
     db.add(job)
     db.commit()
+    return job
+
+
+@router.post("/documents/{doc_id}/cancel", response_model=JobOut)
+def cancel_extraction(doc_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    """Stop the document's extraction.
+
+    A queued job is never claimed once canceled. A running one is stopped cooperatively: the
+    pipeline checks this status at each progress checkpoint and gives up there, so the worker
+    moves on to the next paper instead of finishing one the admin no longer wants."""
+    doc = _get_doc(db, doc_id)
+    job = doc.jobs[-1] if doc.jobs else None
+    if job is None or job.status not in (JobStatus.queued, JobStatus.running):
+        raise HTTPException(409, "No extraction is in progress for this document")
+    was_queued = job.status == JobStatus.queued
+    job.status = JobStatus.canceled
+    job.stage = "canceled"
+    if was_queued:
+        # Never claimed, so no worker will ever finish it: close it out here.
+        job.finished_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(job)
     return job
 
 

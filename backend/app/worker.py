@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select, update
 
 from app.db import SessionLocal
-from app.extraction.pipeline import run_job
+from app.extraction.pipeline import JobCanceled, run_job
 from app.models import ExtractionJob, JobStatus
 
 log = logging.getLogger("worker")
@@ -49,10 +49,21 @@ def process(job_id: int) -> None:
         try:
             run_job(db, job)
             job.status, job.stage, job.progress = JobStatus.completed, "done", 1.0
+        except JobCanceled as exc:
+            # Asked for, not a failure: leave the row canceled and free the worker.
+            log.info("Job %s canceled (%s)", job_id, exc)
+            db.rollback()
+            job = db.get(ExtractionJob, job_id)
+            if job is None:  # the document was deleted outright
+                return
+            job.status, job.stage, job.error = JobStatus.canceled, "canceled", None
         except Exception as exc:
             log.exception("Job %s failed", job_id)
             db.rollback()
             job = db.get(ExtractionJob, job_id)
+            if job is None:  # the document was deleted while this job ran
+                log.info("Job %s vanished mid-run; its document was deleted", job_id)
+                return
             job.status, job.error = JobStatus.failed, f"{type(exc).__name__}: {exc}"[:4000]
         job.finished_at = datetime.now(timezone.utc)
         db.commit()

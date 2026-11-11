@@ -57,6 +57,7 @@ from app.models import (
     Document,
     DocumentKind,
     ExtractionJob,
+    JobStatus,
     Question,
     QuestionType,
     ReviewStatus,
@@ -662,6 +663,14 @@ def linked_solutions(db: Session, paper: Document) -> list[Document]:
 
 
 # --- jobs -----------------------------------------------------------------------------------
+class JobCanceled(Exception):
+    """Raised at a progress checkpoint when the job has been canceled.
+
+    Cancellation is cooperative: the API marks the row `canceled`, and the pipeline notices at
+    its next checkpoint rather than being killed mid-call. That keeps the database consistent
+    and stops further Gemini calls being made for a paper nobody wants any more."""
+
+
 def run_job(db: Session, job: ExtractionJob, provider: ExtractionProvider | None = None) -> None:
     from app.services.publish import publish_document
 
@@ -671,6 +680,10 @@ def run_job(db: Session, job: ExtractionJob, provider: ExtractionProvider | None
     def progress(stage: str, pct: float) -> None:
         job.stage, job.progress = stage, round(pct, 3)
         db.commit()
+        # Sessions are created with `expire_on_commit=False`, so `job.status` would still hold
+        # the value this session loaded. Re-read the column to see a cancel committed elsewhere.
+        if db.scalar(select(ExtractionJob.status).where(ExtractionJob.id == job.id)) == JobStatus.canceled:
+            raise JobCanceled(f"canceled during {stage}")
 
     provider = provider or build_provider(settings)
     cache = cache_for(doc)

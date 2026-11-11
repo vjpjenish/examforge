@@ -54,6 +54,9 @@ class JobStatus(str, enum.Enum):
     running = "running"
     completed = "completed"
     failed = "failed"
+    # Asked to stop. A queued job is never claimed; a running one stops at the pipeline's
+    # next progress checkpoint, so the worker is free for the next paper straight away.
+    canceled = "canceled"
 
 
 class QuestionType(str, enum.Enum):

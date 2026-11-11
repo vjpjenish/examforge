@@ -84,7 +84,7 @@ export type Answer = string[] | NumericAnswer | null;
 
 export interface Job {
   id: number;
-  status: "queued" | "running" | "completed" | "failed";
+  status: "queued" | "running" | "completed" | "failed" | "canceled";
   stage: string;
   progress: number;
   error: string | null;

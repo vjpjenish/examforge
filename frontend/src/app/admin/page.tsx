@@ -5,10 +5,12 @@ import {
   AlertTriangle,
   CheckCircle2,
   ChevronRight,
+  Ban,
   Eraser,
   FileText,
   Loader2,
   Plus,
+  Trash2,
   Search,
   Sparkles,
   UploadCloud,
@@ -20,7 +22,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 import { createPortal } from "react-dom";
 
 import { Button, Card, EmptyState, ErrorNote, Field, Input, ProgressBar, Select, Skeleton } from "@/components/ui";
-import { api, type DocumentInfo, type Exam } from "@/lib/api";
+import { api, ApiError, type DocumentInfo, type Exam } from "@/lib/api";
 import { formatDate, useApi } from "@/lib/hooks";
 
 const KINDS = [
@@ -110,6 +112,12 @@ function StatusPill({ doc }: { doc: DocumentInfo }) {
     return (
       <span className={clsx(base, "bg-danger-soft text-danger")}>
         <AlertTriangle className="h-3 w-3" /> Failed
+      </span>
+    );
+  if (job.status === "canceled")
+    return (
+      <span className={clsx(base, "bg-sunken text-muted")}>
+        <Ban className="h-3 w-3" /> Canceled
       </span>
     );
   return (
@@ -437,7 +445,7 @@ function UploadDialog({
                     <Field label="Marks">
                       <Input
                         type="number"
-                        step="0.25"
+                        step="any"
                         min={0}
                         max={100}
                         value={form.marks_correct}
@@ -448,7 +456,7 @@ function UploadDialog({
                     <Field label="Penalty">
                       <Input
                         type="number"
-                        step="0.25"
+                        step="any"
                         min={0}
                         max={100}
                         value={form.marks_incorrect}
@@ -502,11 +510,16 @@ function DocumentRow({
   doc,
   paperTitle,
   onClear,
+  onCancel,
+  onDelete,
 }: {
   doc: DocumentInfo;
   paperTitle: (id: number | null) => string | undefined;
   onClear: () => void;
+  onCancel: () => Promise<void>;
+  onDelete: () => Promise<void>;
 }) {
+  const [rowBusy, setRowBusy] = useState<"cancel" | "delete" | null>(null);
   const job = doc.latest_job;
   const total = questionTotal(doc);
   const running = job != null && ["queued", "running"].includes(job.status);
@@ -583,11 +596,45 @@ function DocumentRow({
         >
           <ChevronRight className="h-4 w-4" />
         </Link>
+        {running && (
+          <button
+            onClick={async () => {
+              setRowBusy("cancel");
+              try {
+                await onCancel();
+              } finally {
+                setRowBusy(null);
+              }
+            }}
+            disabled={rowBusy != null}
+            title="Stop this extraction and free the queue"
+            aria-label={`Cancel extraction of ${doc.title}`}
+            className="grid h-8 w-8 place-items-center rounded-lg text-subtle transition hover:bg-warning-soft hover:text-warning disabled:opacity-40"
+          >
+            {rowBusy === "cancel" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ban className="h-4 w-4" />}
+          </button>
+        )}
+        <button
+          onClick={async () => {
+            setRowBusy("delete");
+            try {
+              await onDelete();
+            } finally {
+              setRowBusy(null);
+            }
+          }}
+          disabled={rowBusy != null}
+          title="Delete this paper and everything extracted from it"
+          aria-label={`Delete ${doc.title}`}
+          className="grid h-8 w-8 place-items-center rounded-lg text-subtle transition hover:bg-danger-soft hover:text-danger disabled:opacity-40"
+        >
+          {rowBusy === "delete" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+        </button>
         <button
           onClick={onClear}
-          title="Clear from this list"
-          aria-label={`Clear ${doc.title} from this list`}
-          className="grid h-8 w-8 place-items-center rounded-lg text-subtle opacity-60 transition hover:bg-danger-soft hover:text-danger hover:opacity-100 focus-visible:opacity-100"
+          title="Hide from this list (the paper itself is kept)"
+          aria-label={`Hide ${doc.title} from this list`}
+          className="grid h-8 w-8 place-items-center rounded-lg text-subtle opacity-60 transition hover:bg-sunken hover:text-fg hover:opacity-100 focus-visible:opacity-100"
         >
           <X className="h-4 w-4" />
         </button>
@@ -609,6 +656,35 @@ export default function AdminPage() {
   const [search, setSearch] = useState("");
 
   const clearOne = (id: number) => writeClearedIds([...clearedIds, id]);
+
+  /** Stop an extraction that is queued or already running, so the next upload is not stuck
+   *  behind a paper the admin no longer wants. Clearing only hides a row; this is server-side. */
+  const cancelOne = async (doc: DocumentInfo) => {
+    try {
+      await api(`/api/documents/${doc.id}/cancel`, { method: "POST" });
+    } catch (e) {
+      alert(e instanceof ApiError ? e.message : "Could not cancel this extraction");
+    }
+    reload();
+  };
+
+  const deleteOne = async (doc: DocumentInfo) => {
+    const extracted = questionTotal(doc);
+    if (
+      !confirm(
+        `Delete "${doc.title}"?\n\nThis removes the paper` +
+          (extracted ? ` and its ${extracted} extracted questions` : "") +
+          ". It cannot be undone.",
+      )
+    )
+      return;
+    try {
+      await api(`/api/documents/${doc.id}`, { method: "DELETE" });
+    } catch (e) {
+      alert(e instanceof ApiError ? e.message : "Could not delete this paper");
+    }
+    reload();
+  };
 
   const all = useMemo(() => docs ?? [], [docs]);
   const visibleDocs = useMemo(() => all.filter((d) => !cleared.has(d.id)), [all, clearedIds]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -724,7 +800,14 @@ export default function AdminPage() {
         ) : shown.length ? (
           <ul>
             {shown.map((d) => (
-              <DocumentRow key={d.id} doc={d} paperTitle={paperTitle} onClear={() => clearOne(d.id)} />
+              <DocumentRow
+                key={d.id}
+                doc={d}
+                paperTitle={paperTitle}
+                onClear={() => clearOne(d.id)}
+                onCancel={() => cancelOne(d)}
+                onDelete={() => deleteOne(d)}
+              />
             ))}
           </ul>
         ) : (
