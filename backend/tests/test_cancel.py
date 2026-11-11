@@ -7,6 +7,7 @@ right one sat in the queue behind the paper that was supposedly cancelled, becau
 
 import pytest
 
+from app.config import get_settings
 from app.models import ExtractionJob, JobStatus
 from app.worker import claim_next, process
 
@@ -137,3 +138,45 @@ def test_a_positive_penalty_never_rewards_wrong_answers(client, admin_headers, t
     score = client.post(f"/api/attempts/{aid}/submit", headers=admin_headers).json()["score"]
     assert score == pytest.approx(-0.33 * answered_wrong), score
     assert score < 0, "every answer was wrong, so the score must be negative"
+
+
+def test_no_transaction_is_held_open_across_model_calls(client, admin_headers, tmp_path):
+    """The pipeline must not sit inside a transaction while it waits on the model.
+
+    Found in production on Neon: the cancellation check ran a SELECT straight after commit, which
+    opened a transaction that then stayed idle for minutes during extraction. Managed Postgres
+    terminates idle-in-transaction connections, so the job died at its next write with
+    IdleInTransactionSessionTimeout. SQLite has no such timeout, so nothing local caught it.
+    """
+    from app.db import SessionLocal
+    from app.extraction.pipeline import run_job
+    from app.extraction.providers import HeuristicProvider
+    from app.models import Document
+
+    doc_json = _upload(client, admin_headers, make_pdf(tmp_path / "txn.pdf"), "Transaction paper")
+
+    open_during_call = []
+
+    with SessionLocal() as db:
+        job = db.get(ExtractionJob, doc_json["latest_job"]["id"])
+
+        class Probe(HeuristicProvider):
+            """Stands in for the model call: records whether a transaction was left open."""
+
+            def extract_chunk(self, *a, **kw):
+                open_during_call.append(db.in_transaction())
+                return super().extract_chunk(*a, **kw)
+
+            def profile(self, pages):
+                open_during_call.append(db.in_transaction())
+                return super().profile(pages)
+
+        job.status = JobStatus.running
+        db.commit()
+        run_job(db, job, Probe(get_settings()))
+
+    assert open_during_call, "the probe never ran, so this asserts nothing"
+    assert not any(open_during_call), (
+        f"a transaction was open during {sum(open_during_call)} of {len(open_during_call)} model "
+        "calls; managed Postgres would terminate the connection"
+    )

@@ -682,7 +682,12 @@ def run_job(db: Session, job: ExtractionJob, provider: ExtractionProvider | None
         db.commit()
         # Sessions are created with `expire_on_commit=False`, so `job.status` would still hold
         # the value this session loaded. Re-read the column to see a cancel committed elsewhere.
-        if db.scalar(select(ExtractionJob.status).where(ExtractionJob.id == job.id)) == JobStatus.canceled:
+        canceled = db.scalar(select(ExtractionJob.status).where(ExtractionJob.id == job.id)) == JobStatus.canceled
+        # That SELECT opened a transaction. Close it before returning: the caller goes off to make
+        # model calls that take minutes, and a managed Postgres (Neon, RDS) terminates connections
+        # left idle in a transaction, which would kill the job at its next write.
+        db.rollback()
+        if canceled:
             raise JobCanceled(f"canceled during {stage}")
 
     provider = provider or build_provider(settings)
