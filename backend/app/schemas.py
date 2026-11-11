@@ -117,6 +117,14 @@ class QuestionOut(ORM):
     answer_source: str | None = None
     edit_count: int = 0
 
+    @field_validator("options", mode="before")
+    @classmethod
+    def _label_order(cls, value):
+        """Serve options as A, B, C, D even when they were extracted in reading order."""
+        from app.extraction.labels import ordered_options
+
+        return ordered_options(value)
+
 
 class QuestionPatch(BaseModel):
     number: str | None = None

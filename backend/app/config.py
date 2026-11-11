@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:3000"]
     # Run an extraction worker thread inside the API process (local dev). Use `python -m app.worker` in prod.
     embedded_worker: bool = False
+    # How many extraction workers run side by side. Each one claims its own job, so 2 lets a second
+    # upload start immediately instead of waiting behind the first. Each concurrently extracting
+    # paper holds its own PyMuPDF pages and `extraction_concurrency` model calls in memory, so raise
+    # this only with the RAM to match: on a 512 MB instance 2 workers risks the OOM killer.
+    worker_count: int = 1
 
     # AI extraction
     extraction_provider: str = "gemini"  # "gemini" | "heuristic"
@@ -35,6 +40,10 @@ class Settings(BaseSettings):
     max_recover_calls: int = 6
     # For bilingual papers, which language version of each question to keep.
     extraction_language: str = "English"
+    # An "explanation" longer than this is a solution-PDF parse failure, not an explanation: when
+    # the parser stops recognising entry boundaries every remaining page is appended to the last
+    # entry. Observed in practice at 1.28 MB on a single question. Dropped and flagged instead.
+    max_explanation_chars: int = 50_000
     review_confidence_threshold: float = 0.8
     max_upload_mb: int = 80
 

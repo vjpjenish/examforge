@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.extraction.labels import ordered_options
 from app.models import Attempt, AttemptAnswer, AttemptStatus, Role, Test, TestQuestion, User
 from app.schemas import SaveAnswerIn, TestOut, TestPatch
 from app.security import current_user, require_admin
@@ -126,7 +127,7 @@ def get_attempt(attempt_id: int, db: Session = Depends(get_db), user: User = Dep
             "number": q.number,
             "type": q.type.value,
             "text": q.text,
-            "options": [{k: o.get(k) for k in ("label", "text", "image")} for o in q.options],
+            "options": [{k: o.get(k) for k in ("label", "text", "image")} for o in ordered_options(q.options)],
             "images": q.images,
             "response": a.response if a else None,
             "marked_for_review": a.marked_for_review if a else False,

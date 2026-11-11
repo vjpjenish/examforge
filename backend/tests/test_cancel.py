@@ -180,3 +180,41 @@ def test_no_transaction_is_held_open_across_model_calls(client, admin_headers, t
         f"a transaction was open during {sum(open_during_call)} of {len(open_during_call)} model "
         "calls; managed Postgres would terminate the connection"
     )
+
+
+def test_two_workers_claim_different_jobs(client, admin_headers, tmp_path):
+    """With more than one worker, a second upload does not wait behind the first.
+
+    `claim_next` locks the row it takes (FOR UPDATE SKIP LOCKED on Postgres), so two workers must
+    never claim the same job, and the second upload must be picked up rather than queued.
+    """
+    first = _upload(client, admin_headers, make_pdf(tmp_path / "one.pdf"), "First paper")
+    second = _upload(client, admin_headers, make_pdf(tmp_path / "two.pdf"), "Second paper")
+
+    a, b = claim_next(), claim_next()
+    assert a is not None and b is not None, "both uploads should be claimable at once"
+    assert a != b, "two workers must never claim the same job"
+    assert {a, b} == {first["latest_job"]["id"], second["latest_job"]["id"]}
+    assert claim_next() is None
+
+    process(a)
+    process(b)
+    for doc in (first, second):
+        detail = client.get(f"/api/documents/{doc['id']}", headers=admin_headers).json()
+        assert detail["latest_job"]["status"] == "completed"
+
+
+def test_worker_count_starts_that_many_threads(monkeypatch):
+    import threading
+
+    from app import worker as worker_module
+
+    started = []
+    monkeypatch.setattr(worker_module, "run_forever", lambda stop, **kw: started.append(threading.current_thread().name))
+    stop = worker_module.start_embedded(3)
+    for t in threading.enumerate():
+        if t.name.startswith("extraction-worker-"):
+            t.join(timeout=2)
+    stop.set()
+    assert len(started) == 3, started
+    assert sorted(started) == ["extraction-worker-1", "extraction-worker-2", "extraction-worker-3"]

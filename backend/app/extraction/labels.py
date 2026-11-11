@@ -28,3 +28,23 @@ def normalize_answer(raw: list[str], option_labels: list[str] | None = None) -> 
     if lettered and labels and all(label.isdigit() and 1 <= int(label) <= len(_LETTERS) for label in labels):
         labels = {_LETTERS[int(label) - 1] for label in labels}
     return sorted(labels)
+
+
+def ordered_options(options: list[dict] | None) -> list[dict]:
+    """Return the options in label order (A, B, C, D).
+
+    The model returns options in the reading order it found them, which on two-column papers is
+    often A, C, D, B. Students were shown that order, and answer labels then looked wrong against
+    the paper. Sorting happens on read so existing questions are fixed too, with no migration.
+
+    Only a clean set of single-character labels is reordered: anything unusual (duplicates, blanks,
+    "Both A and B") is left exactly as extracted rather than guessed at.
+    """
+    if not options:
+        return options or []
+    labels = [str(o.get("label") or "") for o in options]
+    if len(set(labels)) != len(labels):
+        return options
+    if not all(len(label) == 1 and label.isalnum() for label in labels):
+        return options
+    return sorted(options, key=lambda o: str(o.get("label") or ""))
